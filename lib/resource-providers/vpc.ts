@@ -1,15 +1,17 @@
-import { Tags } from 'aws-cdk-lib';
+import {Fn, Tags} from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import { ISubnet, PrivateSubnet } from 'aws-cdk-lib/aws-ec2';
-import { ResourceContext, ResourceProvider } from "../spi";
+import {IpProtocol, ISubnet, PrivateSubnet, Vpc} from 'aws-cdk-lib/aws-ec2';
+import * as eks from "aws-cdk-lib/aws-eks";
+import {ResourceContext, ResourceProvider} from "../spi";
 
 /**
  * Interface for Mapping for fields such as Primary CIDR, Secondary CIDR, Secondary Subnet CIDR.
  */
 interface VpcProps {
-   primaryCidr: string, 
+   primaryCidr?: string,
    secondaryCidr?: string,
-   secondarySubnetCidrs?: string[]
+   secondarySubnetCidrs?: string[],
+   ipFamily?: string,
 }
 
 /**
@@ -20,19 +22,23 @@ export class VpcProvider implements ResourceProvider<ec2.IVpc> {
     readonly primaryCidr?: string;
     readonly secondaryCidr?: string;
     readonly secondarySubnetCidrs?: string[];
+    readonly ipFamily?: string;
+    subnets?: ec2.ISubnet[];
+
 
     constructor(vpcId?: string, private vpcProps?: VpcProps) {
         this.vpcId = vpcId;
         this.primaryCidr = vpcProps?.primaryCidr;
         this.secondaryCidr = vpcProps?.secondaryCidr;
         this.secondarySubnetCidrs = vpcProps?.secondarySubnetCidrs;
+        this.ipFamily = vpcProps?.ipFamily;
     }
 
     provide(context: ResourceContext): ec2.IVpc {
         const id = context.scope.node.id;
         let vpc = undefined;
 
-        if (this.vpcId) {
+        if (this.vpcId && this.vpcId !== eks.IpFamily.IP_V6) {
             if (this.vpcId === "default") {
                 console.log(`looking up completely default VPC`);
                 vpc = ec2.Vpc.fromLookup(context.scope, id + "-vpc", { isDefault: true });
@@ -43,6 +49,11 @@ export class VpcProvider implements ResourceProvider<ec2.IVpc> {
         }
 
         if (vpc == null) {
+
+            if (this.ipFamily && this.ipFamily == eks.IpFamily.IP_V6) {
+                vpc = this.getIPv6VPC(context, id);
+                return vpc;
+            }
             // It will automatically divide the provided VPC CIDR range, and create public and private subnets per Availability Zone.
             // If VPC CIDR range is not provided, uses `10.0.0.0/16` as the range and creates public and private subnets per Availability Zone.
             // Network routing for the public subnets will be configured to allow outbound access directly via an Internet Gateway.
@@ -58,7 +69,6 @@ export class VpcProvider implements ResourceProvider<ec2.IVpc> {
             }
         }
 
-        
         if (this.secondaryCidr) {
             this.createSecondarySubnets(context, id, vpc);
         }
@@ -93,6 +103,32 @@ export class VpcProvider implements ResourceProvider<ec2.IVpc> {
             }
         }
     }
+
+    public getIPv6VPC(context: ResourceContext, id: string):ec2.IVpc {
+        const vpc = new ec2.Vpc(context.scope, id+"-vpc", { maxAzs: 2, natGateways: 1,
+            ipProtocol: IpProtocol.DUAL_STACK, restrictDefaultSecurityGroup: false });
+        const ipv6cidr = new ec2.CfnVPCCidrBlock(context.scope, id+"-CIDR6", {
+            vpcId: vpc.vpcId,
+            amazonProvidedIpv6CidrBlock: true,
+        });
+        let subnetcount = 0;
+        let subnets = [...vpc.publicSubnets, ...vpc.privateSubnets];
+        for ( let subnet of subnets) {
+            // Wait for the ipv6 cidr to complete
+            subnet.node.addDependency(ipv6cidr);
+            this._associate_subnet_with_v6_cidr(subnetcount, subnet, vpc);
+            subnetcount++;
+        }
+        this.subnets = subnets
+        return vpc
+    }
+
+    _associate_subnet_with_v6_cidr(count: number, subnet: ec2.ISubnet, vpc: Vpc) {
+        const cfnSubnet = subnet.node.defaultChild as ec2.CfnSubnet;
+        cfnSubnet.ipv6CidrBlock = Fn.select(count, Fn.cidr(Fn.select(0, vpc.vpcIpv6CidrBlocks), 256, (128 - 64).toString()));
+        cfnSubnet.assignIpv6AddressOnCreation = true;
+    }
+
 }
 
 export class DirectVpcProvider implements ResourceProvider<ec2.IVpc> {

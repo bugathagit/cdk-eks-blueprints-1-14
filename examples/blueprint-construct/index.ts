@@ -9,6 +9,7 @@ import { logger, userLog } from '../../lib/utils';
 import * as team from '../teams';
 import { CfnWorkspace } from 'aws-cdk-lib/aws-aps';
 
+import * as eks from "aws-cdk-lib/aws-eks";
 const burnhamManifestDir = './examples/teams/team-burnham/';
 const rikerManifestDir = './examples/teams/team-riker/';
 const teamManifestDirList = [burnhamManifestDir, rikerManifestDir];
@@ -122,18 +123,6 @@ export default class BlueprintConstruct {
                 }
             }),
             // new blueprints.addons.VeleroAddOn(),
-            new blueprints.addons.VpcCniAddOn({
-                customNetworkingConfig: {
-                    subnets: [
-                        blueprints.getNamedResource("secondary-cidr-subnet-0"),
-                        blueprints.getNamedResource("secondary-cidr-subnet-1"),
-                        blueprints.getNamedResource("secondary-cidr-subnet-2"),
-                    ]
-                },
-                awsVpcK8sCniCustomNetworkCfg: true,
-                eniConfigLabelDef: 'topology.kubernetes.io/zone',
-                serviceAccountPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonEKS_CNI_Policy")]
-            }),
             new blueprints.addons.CoreDnsAddOn(),
             new blueprints.addons.KubeProxyAddOn(),
             new blueprints.addons.OpaGatekeeperAddOn(),
@@ -302,12 +291,18 @@ export default class BlueprintConstruct {
             jobQueueName: 'team-a-job-queue',
         };
 
+        /*
+        .resourceProvider(blueprints.GlobalResources.Vpc, new blueprints.VpcProvider(undefined, {
+                ipFamily: eks.IpFamily.IP_V6,
+            }))
+            .withBlueprintProps({
+                ipFamily: eks.IpFamily.IP_V6,
+            })
+         */
         blueprints.EksBlueprint.builder()
             .addOns(...addOns)
             .resourceProvider(blueprints.GlobalResources.Vpc, new blueprints.VpcProvider(undefined, {
-                primaryCidr: "10.2.0.0/16",
-                secondaryCidr: "100.64.0.0/16",
-                secondarySubnetCidrs: ["100.64.0.0/24","100.64.1.0/24","100.64.2.0/24"]
+                ipFamily: eks.IpFamily.IP_V6,
             }))
             .resourceProvider("node-role", nodeRole)
             .resourceProvider('apache-airflow-s3-bucket-provider', apacheAirflowS3Bucket)

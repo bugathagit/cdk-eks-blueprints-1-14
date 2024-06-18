@@ -4,6 +4,7 @@ import { HelmChart, KubernetesVersion } from 'aws-cdk-lib/aws-eks';
 import { ManualApprovalStep } from 'aws-cdk-lib/pipelines';
 import * as blueprints from '../lib';
 import { MyVpcStack } from './test-support';
+import * as eks from "aws-cdk-lib/aws-eks";
 
 describe('Unit tests for EKS Blueprint', () => {
 
@@ -77,6 +78,40 @@ describe('Unit tests for EKS Blueprint', () => {
             name: 'my-blueprint3',
             id: 'my-blueprint3-id',
             version: "auto"
+        });
+
+        const stack3 = await blueprint3.buildAsync(new cdk.App(), 'stack-3');
+        assertBlueprint(stack3, 'argo-cd');
+    });
+
+
+    test('Blueprint builder creates correct stack with IPV6 props', async () => {
+        let app = new cdk.App();
+
+        const blueprint = blueprints.EksBlueprint.builder();
+
+        blueprint.account("123567891").region('us-west-1')
+            .version("auto")
+            .addOns(new blueprints.ArgoCDAddOn)
+            .addOns(new blueprints.AwsLoadBalancerControllerAddOn)
+            .addOns(new blueprints.NginxAddOn)
+            .teams(new blueprints.PlatformTeam({ name: 'platform' }));
+
+        const stack1 = await blueprint.buildAsync(app, "stack-1");
+
+        assertBlueprint(stack1, 'nginx-ingress', 'argo-cd');
+        const blueprint2 = blueprint.clone('us-west-2', '1234567891').addOns(new blueprints.CalicoAddOn);
+
+        const stack2 = await blueprint2.buildAsync(new cdk.App(), 'stack-2');
+
+        assertBlueprint(stack2, 'nginx-ingress', 'argo-cd', 'aws-calico');
+
+        const blueprint3 = blueprints.EksBlueprint.builder().withBlueprintProps({
+            addOns: [new blueprints.ArgoCDAddOn],
+            name: 'my-blueprint3',
+            id: 'my-blueprint3-id',
+            version: "auto",
+            ipFamily: eks.IpFamily.IP_V6,
         });
 
         const stack3 = await blueprint3.buildAsync(new cdk.App(), 'stack-3');
@@ -460,6 +495,29 @@ test("Building blueprint with version correctly passes k8s version to the cluste
 
     const stack = blueprint.build(app, "builder-version-test1");
 
+    expect(stack.getClusterInfo().version).toBeDefined();
+
+});
+
+
+test("Building blueprint with version correctly passes k8s version to the cluster for ipv6", () => {
+
+    const app = new cdk.App();
+
+    const blueprint = blueprints.EksBlueprint.builder().name("builer-version-test1")
+        .version("auto")
+        .addOns(new blueprints.ClusterAutoScalerAddOn);
+
+    expect(blueprint.props.addOns).toHaveLength(1);
+
+    blueprint.withBlueprintProps({
+        version: KubernetesVersion.V1_25,
+        ipFamily: eks.IpFamily.IP_V6,
+    });
+
+    const stack = blueprint.build(app, "builder-version-test1");
+
+    //console.log(stack.getClusterInfo())
     expect(stack.getClusterInfo().version).toBeDefined();
 
 });
