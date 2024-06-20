@@ -336,7 +336,7 @@ export class KarpenterAddOn extends HelmAddOn {
         const tags = this.options.ec2NodeClassSpec?.tags || {};
         const metadataOptions = this.options.ec2NodeClassSpec?.metadataOptions || {
             httpEndpoint: "enabled",
-            httpProtocolIPv6: "disabled",
+            httpProtocolIPv6: "enabled",
             httpPutResponseHopLimit: 2,
             httpTokens: "required"
         };

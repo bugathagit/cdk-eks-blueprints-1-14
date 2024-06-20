@@ -31,9 +31,6 @@ export default class BlueprintConstruct {
         userLog.settings.minLevel = 2; // debug
 
         const teams: Array<blueprints.Team> = [
-            new team.TeamTroi,
-            new team.TeamRiker(scope, teamManifestDirList[1]),
-            new team.TeamBurnham(scope, teamManifestDirList[0]),
             new team.TeamPlatform(process.env.CDK_DEFAULT_ACCOUNT!)
         ];
 
@@ -54,13 +51,19 @@ export default class BlueprintConstruct {
         const apacheAirflowEfs = new blueprints.CreateEfsFileSystemProvider({
             name: 'blueprints-apache-airflow-efs',
         });
-
+        const metadataOptions =  {
+            httpEndpoint: "enabled",
+            httpProtocolIPv6: "enabled",
+            httpPutResponseHopLimit: 2,
+            httpTokens: "required"
+        };
         const nodeClassSpec: blueprints.Ec2NodeClassSpec = {
             amiFamily: "AL2",
             subnetSelectorTerms: [{ tags: { "Name": `${blueprintID}/${blueprintID}-vpc/PrivateSubnet*` }}],
             securityGroupSelectorTerms: [{ tags: { "aws:eks:cluster-name": `${blueprintID}` }}],
+            metadataOptions: metadataOptions
         };
-        
+
         const nodePoolSpec: blueprints.NodePoolSpec = {
             labels: {
                 type: "karpenter-test"
@@ -77,7 +80,7 @@ export default class BlueprintConstruct {
                 { key: 'node.kubernetes.io/instance-type', operator: 'In', values: ['m5.2xlarge'] },
                 { key: 'topology.kubernetes.io/zone', operator: 'In', values: [`${props?.env?.region}a`,`${props?.env?.region}b`]},
                 { key: 'kubernetes.io/arch', operator: 'In', values: ['amd64','arm64']},
-                { key: 'karpenter.sh/capacity-type', operator: 'In', values: ['spot']},
+                { key: 'karpenter.sh/capacity-type', operator: 'In', values: ['ondemand']},
             ],
             disruption: {
                 consolidationPolicy: "WhenEmpty",
@@ -85,7 +88,7 @@ export default class BlueprintConstruct {
                 expireAfter: "20m",
             }
         };
-
+/*
         const addOns: Array<blueprints.ClusterAddOn> = [
             new blueprints.KubeRayAddOn(),
             new blueprints.addons.AwsLoadBalancerControllerAddOn(),
@@ -229,6 +232,15 @@ export default class BlueprintConstruct {
             hostedZoneResources: [ blueprints.GlobalResources.HostedZone ]
         });
 
+ */
+        const addOns: Array<blueprints.ClusterAddOn> = [
+            new blueprints.addons.KarpenterAddOn({
+                version: "v0.33.2",
+                nodePoolSpec: nodePoolSpec,
+                ec2NodeClassSpec: nodeClassSpec,
+                interruptionHandling: true,
+            }),
+        ];
         const clusterProvider = new blueprints.GenericClusterProvider({
             version: KubernetesVersion.V1_29,
             tags: {
@@ -239,10 +251,7 @@ export default class BlueprintConstruct {
                 return new iam.Role(context.scope, 'AdminRole', { assumedBy: new iam.AccountRootPrincipal() });
             }),
             managedNodeGroups: [
-                addGenericNodeGroup(),
-                addCustomNodeGroup(),
-                addWindowsNodeGroup(), //  commented out to check the impact on e2e
-                addGpuNodeGroup()
+                addGenericNodeGroup()
             ]
         });
 
@@ -300,16 +309,16 @@ export default class BlueprintConstruct {
             })
          */
         blueprints.EksBlueprint.builder()
-            .addOns(...addOns)
+            //.addOns(...addOns)
             .resourceProvider(blueprints.GlobalResources.Vpc, new blueprints.VpcProvider(undefined, {
                 ipFamily: eks.IpFamily.IP_V6,
             }))
+            .withBlueprintProps({
+                ipFamily: eks.IpFamily.IP_V6,
+            })
+            .teams(...teams)
             .resourceProvider("node-role", nodeRole)
-            .resourceProvider('apache-airflow-s3-bucket-provider', apacheAirflowS3Bucket)
-            .resourceProvider('apache-airflow-efs-provider', apacheAirflowEfs)
             .clusterProvider(clusterProvider)
-            .resourceProvider(ampWorkspaceName, new blueprints.CreateAmpProvider(ampWorkspaceName, ampWorkspaceName))
-            .teams(...teams, new blueprints.EmrEksTeam(dataTeam), new blueprints.BatchEksTeam(batchTeam))
             .enableControlPlaneLogTypes(blueprints.ControlPlaneLogType.API)
             .build(scope, blueprintID, props);
 
@@ -321,7 +330,7 @@ function addGenericNodeGroup(): blueprints.ManagedNodeGroup {
     return {
         id: "mng1",
         amiType: NodegroupAmiType.AL2_X86_64,
-        instanceTypes: [new ec2.InstanceType('m5.4xlarge')],
+        instanceTypes: [new ec2.InstanceType('m6a.xlarge'), new ec2.InstanceType('m6i.xlarge')], //[ "m6i.xlarge", "m6a.xlarge" ]
         desiredSize: 2,
         maxSize: 3,
         nodeRole: blueprints.getNamedResource("node-role") as iam.Role,
