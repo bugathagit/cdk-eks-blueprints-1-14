@@ -66,21 +66,16 @@ export default class BlueprintConstruct {
 
         const nodePoolSpec: blueprints.NodePoolSpec = {
             labels: {
-                type: "karpenter-test"
+                type: "karpenter"
             },
             annotations: {
-                "eks-blueprints/owner": "young"
+                "eks-blueprints/owner": "bugatha"
             },
-            taints: [{
-                key: "workload",
-                value: "test",
-                effect: "NoSchedule",
-            }],
             requirements: [
-                { key: 'node.kubernetes.io/instance-type', operator: 'In', values: ['m5.2xlarge'] },
+                { key: 'node.kubernetes.io/instance-type', operator: 'In', values: ["c5.large", "m5.large", "r5.large", "m5.xlarge"] },
                 { key: 'topology.kubernetes.io/zone', operator: 'In', values: [`${props?.env?.region}a`,`${props?.env?.region}b`]},
                 { key: 'kubernetes.io/arch', operator: 'In', values: ['amd64','arm64']},
-                { key: 'karpenter.sh/capacity-type', operator: 'In', values: ['ondemand']},
+                { key: 'karpenter.sh/capacity-type', operator: 'In', values: ['on-demand']},
             ],
             disruption: {
                 consolidationPolicy: "WhenEmpty",
@@ -235,7 +230,7 @@ export default class BlueprintConstruct {
  */
         const addOns: Array<blueprints.ClusterAddOn> = [
             new blueprints.addons.KarpenterAddOn({
-                version: "v0.33.2",
+                version: "v0.34.5",
                 nodePoolSpec: nodePoolSpec,
                 ec2NodeClassSpec: nodeClassSpec,
                 interruptionHandling: true,
@@ -309,7 +304,7 @@ export default class BlueprintConstruct {
             })
          */
         blueprints.EksBlueprint.builder()
-            //.addOns(...addOns)
+            .addOns(...addOns)
             .resourceProvider(blueprints.GlobalResources.Vpc, new blueprints.VpcProvider(undefined, {
                 ipFamily: eks.IpFamily.IP_V6,
             }))
