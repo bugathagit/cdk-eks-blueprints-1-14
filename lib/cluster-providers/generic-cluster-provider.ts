@@ -292,13 +292,11 @@ export class GenericClusterProvider implements ClusterProvider {
         cluster.node.addDependency(vpc);
 
         const nodeGroups: eks.Nodegroup[] = [];
-/*
+
         this.props.managedNodeGroups?.forEach(n => {
             const nodeGroup = this.addManagedNodeGroup(cluster, n);
             nodeGroups.push(nodeGroup);
         });
-
- */
 
         const autoscalingGroups: autoscaling.AutoScalingGroup[] = [];
         this.props.autoscalingNodeGroups?.forEach(n => {

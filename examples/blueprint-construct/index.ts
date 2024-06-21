@@ -333,8 +333,7 @@ function addGenericNodeGroup(): blueprints.ManagedNodeGroup {
         instanceTypes: [new ec2.InstanceType('m6a.xlarge'), new ec2.InstanceType('m6i.xlarge')], //[ "m6i.xlarge", "m6a.xlarge" ]
         desiredSize: 2,
         maxSize: 3,
-        nodeRole: blueprints.getNamedResource("node-role") as iam.Role,
-        nodeGroupSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        tags: { complianceTech: "doNotMonitor" },
         launchTemplate: {
             // You can pass Custom Tags to Launch Templates which gets Propogated to worker nodes.
             tags: {
@@ -343,7 +342,7 @@ function addGenericNodeGroup(): blueprints.ManagedNodeGroup {
                 "LaunchTemplate": "Custom",
                 "Instance": "ONDEMAND"
             },
-            requireImdsv2: false
+            requireImdsv2: true
         }
     };
 }
