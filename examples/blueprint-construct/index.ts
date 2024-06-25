@@ -10,6 +10,7 @@ import * as team from '../teams';
 import { CfnWorkspace } from 'aws-cdk-lib/aws-aps';
 
 import * as eks from "aws-cdk-lib/aws-eks";
+import {getEKSNodeIpv6PolicyDocument} from "../../lib";
 const burnhamManifestDir = './examples/teams/team-burnham/';
 const rikerManifestDir = './examples/teams/team-riker/';
 const teamManifestDirList = [burnhamManifestDir, rikerManifestDir];
@@ -38,8 +39,10 @@ export default class BlueprintConstruct {
         [
             iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonEKSWorkerNodePolicy"),
             iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonEC2ContainerRegistryReadOnly"),
-            iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore")
-        ]);
+            iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"),
+        ],
+            getEKSNodeIpv6PolicyDocument()
+        );
 
         const ampWorkspaceName = "blueprints-amp-workspace";
         const ampWorkspace: CfnWorkspace = blueprints.getNamedResource(ampWorkspaceName);
@@ -235,6 +238,10 @@ export default class BlueprintConstruct {
                 ec2NodeClassSpec: nodeClassSpec,
                 interruptionHandling: true,
             }),
+            new blueprints.addons.VpcCniAddOn({
+                version: "v1.18.2-eksbuild.1",
+                enableV6Egress: true,
+            })
         ];
         const clusterProvider = new blueprints.GenericClusterProvider({
             version: KubernetesVersion.V1_29,
@@ -320,8 +327,9 @@ export default class BlueprintConstruct {
     }
 }
 
-function addGenericNodeGroup(): blueprints.ManagedNodeGroup {
 
+
+function addGenericNodeGroup(): blueprints.ManagedNodeGroup {
     return {
         id: "mng1",
         amiType: NodegroupAmiType.AL2_X86_64,
@@ -329,6 +337,7 @@ function addGenericNodeGroup(): blueprints.ManagedNodeGroup {
         desiredSize: 2,
         maxSize: 3,
         tags: { complianceTech: "doNotMonitor" },
+        nodeRole: blueprints.getNamedResource("node-role") as iam.Role,
         launchTemplate: {
             // You can pass Custom Tags to Launch Templates which gets Propogated to worker nodes.
             tags: {

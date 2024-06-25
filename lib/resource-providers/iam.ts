@@ -1,7 +1,8 @@
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { IManagedPolicy } from 'aws-cdk-lib/aws-iam';
+import {IManagedPolicy, Policy, PolicyDocument} from 'aws-cdk-lib/aws-iam';
 import * as spi from '../spi';
 import assert = require('assert');
+import {Stack} from "aws-cdk-lib";
 
 /**
  * Role provider that imports an existing role, performing its lookup by the provided name.
@@ -28,13 +29,19 @@ export class CreateRoleProvider implements spi.ResourceProvider<iam.Role> {
      * @param assumedBy @example  new iam.ServicePrincipal('ec2.amazonaws.com') 
      * @param policies 
      */
-    constructor(private roleId: string, private assumedBy: iam.IPrincipal, private policies?: IManagedPolicy[]){}
+    constructor(private roleId: string, private assumedBy: iam.IPrincipal, private policies?: IManagedPolicy[], private policyDocument?: PolicyDocument){}
 
     provide(context: spi.ResourceContext): iam.Role {
-        return new iam.Role(context.scope, this.roleId, {
+        const role = new iam.Role(context.scope, this.roleId, {
             assumedBy: this.assumedBy,
             managedPolicies: this.policies
         });
+        if (this.policyDocument){
+            const vpcCniIpv6Policy = new iam.Policy(context.scope, 'vpcCni-Ipv6-Policy', {
+            document: this.policyDocument });
+            role.attachInlinePolicy(vpcCniIpv6Policy);
+        }
+        return role;
     }
 }
 

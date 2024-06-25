@@ -1,18 +1,19 @@
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { Construct } from "constructs";
-import { merge } from 'ts-deepmerge';
-import { ClusterInfo, Values, BlockDeviceMapping, Taint, Sec, Min, Hour } from '../../spi';
+import {PolicyDocument} from 'aws-cdk-lib/aws-iam';
+import {Construct} from "constructs";
+import {merge} from 'ts-deepmerge';
+import {BlockDeviceMapping, ClusterInfo, Hour, Min, Sec, Taint, Values} from '../../spi';
 import * as utils from '../../utils';
-import { HelmAddOn, HelmAddOnProps, HelmAddOnUserProps } from '../helm-addon';
-import { KarpenterControllerPolicy, KarpenterControllerPolicyBeta } from './iam';
-import { CfnOutput, Duration, Names } from 'aws-cdk-lib';
+import {HelmAddOn, HelmAddOnProps, HelmAddOnUserProps} from '../helm-addon';
+import {KarpenterControllerPolicy, KarpenterControllerPolicyBeta} from './iam';
+import {CfnOutput, Duration, Names, Stack} from 'aws-cdk-lib';
 import * as md5 from 'ts-md5';
 import * as semver from 'semver';
 import * as assert from "assert";
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import { Rule } from 'aws-cdk-lib/aws-events';
-import { SqsQueue } from 'aws-cdk-lib/aws-events-targets';
-import { Cluster, KubernetesVersion } from 'aws-cdk-lib/aws-eks';
+import {Rule} from 'aws-cdk-lib/aws-events';
+import {SqsQueue} from 'aws-cdk-lib/aws-events-targets';
+import {Cluster, IpFamily, KubernetesVersion} from 'aws-cdk-lib/aws-eks';
 
 class versionMap {
     private static readonly versionMap: Map<string, string> = new Map([
@@ -601,6 +602,8 @@ export class KarpenterAddOn extends HelmAddOn {
         return Promise.resolve(karpenterChart);
     }
 
+
+
     /**
      * Helper function to convert a key-pair values (with an operator)
      * of spec configurations to appropriate json format for addManifest function
@@ -709,7 +712,11 @@ export class KarpenterAddOn extends HelmAddOn {
             ],
             //roleName: `KarpenterNodeRole-${name}` // let role name to be generated as unique
         });
-
+        if (cluster.ipFamily === IpFamily.IP_V6){
+            const nodeIpv6Policy = new iam.Policy(cluster, 'karpenter-node-Ipv6-Policy', {
+                document: getEKSNodeIpv6PolicyDocument() });
+            karpenterNodeRole.attachInlinePolicy(nodeIpv6Policy);
+        }
         // Set up Instance Profile
         const instanceProfileName = md5.Md5.hashStr(stackName+region);
         const karpenterInstanceProfile = new iam.CfnInstanceProfile(cluster, 'karpenter-instance-profile', {
@@ -760,4 +767,32 @@ export class KarpenterAddOn extends HelmAddOn {
             console.warn(`Please use minimum Karpenter version for this Kubernetes Version: ${compatibleVersion}, otherwise you will run into compatibility issues.`);
         }
     }
+}
+
+export function getEKSNodeIpv6PolicyDocument(){
+    return PolicyDocument.fromJson({
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ec2:AssignIpv6Addresses",
+                    "ec2:DescribeInstances",
+                    "ec2:DescribeTags",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeInstanceTypes"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ec2:CreateTags"
+                ],
+                "Resource": [
+                    "arn:aws:ec2:*:*:network-interface/*"
+                ]
+            }
+        ]
+    });
 }
